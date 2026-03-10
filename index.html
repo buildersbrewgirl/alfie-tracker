@@ -182,6 +182,7 @@ function App(){
     const ts=useCustom&&custTime?new Date(custTime).toISOString():new Date().toISOString();
     const entries=[...selected].map(type=>({type,person,notes:notes.trim(),ts}));
     await sb.from("logs").insert(entries);
+    await loadLogs();
     setSelected(new Set()); setNotes(""); setUseCust(false); setCustTime("");
     setTab("favourite");
   }
