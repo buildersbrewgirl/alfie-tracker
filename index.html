@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Alfie Tracker 🐾</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f7f4;color:#1e1e1e}
+    button{cursor:pointer;font-family:inherit}
+    input,textarea{font-family:inherit}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const {useState,useEffect} = React;
+
+// ── Supabase ────────────────────────────────────
+const SUPABASE_URL = "https://tekkeaaswlmsoloqyssk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_-h4rJ9A_kiiQwDTA6plAuQ_JCLGAN3w";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ───────────────────────────────────────────────
+
+const FAMILY = ["Florin","Georgiana","Andrei","Debs"];
+
+const LANG = {
+  en: {
+    appSub: "Family Tracker",
+    whoAreYou: "Who are you?",
+    switchUser: "switch",
+    logAs: "Logging as",
+    selectAll: "Select all that apply, then tap Log.",
+    notesPlaceholder: "Optional notes…",
+    logPastTime: "Log a past time",
+    logBtn: "Log Selected",
+    lastEntry: "Last entry",
+    nothingToday: "Nothing logged today yet.",
+    noWalks: "No walks logged yet — get outside! 🌳",
+    todayTitle: "Today's Summary",
+    timeline: "Timeline",
+    leaderboard: "Walk Leaderboard",
+    leaderSub: "(recent walks weighted)",
+    favPerson: "Alfie's Favourite Person",
+    weightNote: "Last 7 days = 3× · Last 30 days = 1.5× · Older = 1×",
+    tabs: ["➕ Log", "📊 Today", "🏆 Fave"],
+    types: {
+      walk:       {label:"Walk",         emoji:"🦮"},
+      toilet_wee: {label:"Toilet – Wee", emoji:"💧"},
+      toilet_poo: {label:"Toilet – Poo", emoji:"💩"},
+    },
+    quotes: [
+      n=>`Honestly? ${n} is my whole world right now. Sorry everyone else.`,
+      n=>`I've thought about it carefully and ${n} is simply the best human.`,
+      n=>`${n} took me out this week. I would die for them.`,
+      n=>`Don't tell the others, but ${n} is clearly my favourite. Obviously.`,
+      n=>`If ${n} gets the lead, I completely lose my mind. Every time.`,
+      n=>`${n} walked me AND let me sniff everything. An absolute legend.`,
+    ],
+  },
+  ro: {
+    appSub: "Tracker de Familie",
+    whoAreYou: "Cine ești?",
+    switchUser: "schimbă",
+    logAs: "Înregistrezi ca",
+    selectAll: "Selectează tot ce se aplică, apoi apasă Înregistrează.",
+    notesPlaceholder: "Note opționale…",
+    logPastTime: "Înregistrează o oră anterioară",
+    logBtn: "Înregistrează",
+    lastEntry: "Ultima înregistrare",
+    nothingToday: "Nimic înregistrat azi.",
+    noWalks: "Nicio plimbare înregistrată — ieșiți afară! 🌳",
+    todayTitle: "Rezumat Azi",
+    timeline: "Cronologie",
+    leaderboard: "Clasament Plimbări",
+    leaderSub: "(plimbările recente contează mai mult)",
+    favPerson: "Persoana Preferată a lui Alfie",
+    weightNote: "Ultimele 7 zile = 3× · Ultimele 30 zile = 1.5× · Mai vechi = 1×",
+    tabs: ["➕ Jurnal", "📊 Azi", "🏆 Favorit"],
+    types: {
+      walk:       {label:"Plimbare", emoji:"🦮"},
+      toilet_wee: {label:"Pipi",     emoji:"💧"},
+      toilet_poo: {label:"Caca",     emoji:"💩"},
+    },
+    quotes: [
+      n=>`Sincer? ${n} este toată lumea mea acum. Scuze tuturor celorlalți.`,
+      n=>`M-am gândit bine și ${n} este pur și simplu cel mai bun om.`,
+      n=>`${n} m-a scos la plimbare săptămâna asta. Aș face orice pentru ei.`,
+      n=>`Să nu spuneți altora, dar ${n} e clar preferatul meu. Evident.`,
+      n=>`Când ${n} ia lesa, îmi pierd complet mințile. De fiecare dată.`,
+      n=>`${n} m-a plimbat ȘI m-a lăsat să miros tot. O legendă.`,
+    ],
+  },
+};
+
+const TYPE_KEYS = ["walk","toilet_wee","toilet_poo"];
+const TYPE_COLORS = {
+  walk:       {bg:"#d1f5d3",bd:"#28a745",tx:"#155724"},
+  toilet_wee: {bg:"#cce5ff",bd:"#339af0",tx:"#084298"},
+  toilet_poo: {bg:"#fff9c4",bd:"#f59f00",tx:"#5c4a00"},
+};
+
+function calcScores(logs){
+  const now=Date.now(),sc={};
+  logs.filter(l=>l.type==="walk").forEach(l=>{
+    const d=(now-new Date(l.ts))/86400000;
+    const w=d<=7?3:d<=30?1.5:1;
+    sc[l.person]=(sc[l.person]||0)+w;
+  });
+  return Object.entries(sc).sort((a,b)=>b[1]-a[1]);
+}
+
+function timeAgo(iso,lang){
+  const d=Math.floor((Date.now()-new Date(iso))/1000);
+  if(lang==="ro"){
+    if(d<60) return `acum ${d}s`;
+    if(d<3600) return `acum ${Math.floor(d/60)}m`;
+    if(d<86400) return `acum ${Math.floor(d/3600)}h`;
+    return `acum ${Math.floor(d/86400)}z`;
+  }
+  if(d<60) return d+"s ago";
+  if(d<3600) return Math.floor(d/60)+"m ago";
+  if(d<86400) return Math.floor(d/3600)+"h ago";
+  return Math.floor(d/86400)+"d ago";
+}
+function fmtTime(iso){ return new Date(iso).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); }
+function fmtDate(iso,lang){
+  const d=new Date(iso),t=new Date(),y=new Date();
+  y.setDate(t.getDate()-1);
+  if(d.toDateString()===t.toDateString()) return lang==="ro"?"Azi":"Today";
+  if(d.toDateString()===y.toDateString()) return lang==="ro"?"Ieri":"Yesterday";
+  return d.toLocaleDateString([],{weekday:"short",day:"numeric",month:"short"});
+}
+
+function App(){
+  const [logs,setLogs]         = useState([]);
+  const [person,setPerson]     = useState("");
+  const [tab,setTab]           = useState("log");
+  const [selected,setSelected] = useState(new Set());
+  const [notes,setNotes]       = useState("");
+  const [useCustom,setUseCust] = useState(false);
+  const [custTime,setCustTime] = useState("");
+  const [lang,setLang]         = useState("ro");
+  const [quote,setQuote]       = useState("");
+  const [loading,setLoading]   = useState(true);
+
+  const T = LANG[lang];
+
+  async function loadLogs(){
+    const {data} = await sb.from("logs").select("*").order("ts",{ascending:false}).limit(500);
+    if(data) setLogs(data);
+    setLoading(false);
+  }
+
+  useEffect(()=>{
+    loadLogs();
+    const channel = sb.channel("logs-changes")
+      .on("postgres_changes",{event:"*",schema:"public",table:"logs"},loadLogs)
+      .subscribe();
+    return ()=>sb.removeChannel(channel);
+  },[]);
+
+  useEffect(()=>{
+    const sc=calcScores(logs);
+    if(sc.length){
+      const qs=LANG[lang].quotes;
+      setQuote(qs[Math.floor(Math.random()*qs.length)](sc[0][0]));
+    }
+  },[logs,lang]);
+
+  function toggleType(k){
+    setSelected(prev=>{ const n=new Set(prev); n.has(k)?n.delete(k):n.add(k); return n; });
+  }
+
+  async function handleLog(){
+    if(!person||selected.size===0) return;
+    const ts=useCustom&&custTime?new Date(custTime).toISOString():new Date().toISOString();
+    const entries=[...selected].map(type=>({type,person,notes:notes.trim(),ts}));
+    await sb.from("logs").insert(entries);
+    setSelected(new Set()); setNotes(""); setUseCust(false); setCustTime("");
+    setTab("favourite");
+  }
+
+  const todayKey = lang==="ro"?"Azi":"Today";
+  const todayLogs = logs.filter(l=>fmtDate(l.ts,lang)===todayKey);
+  const scores = calcScores(logs);
+
+  // ── Person picker ──
+  if(!person) return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#fff8f0,#fde8cc)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#fff",borderRadius:20,padding:32,maxWidth:340,width:"100%",textAlign:"center",boxShadow:"0 4px 24px rgba(0,0,0,0.08)"}}>
+        <div style={{fontSize:64,marginBottom:12}}>🐾</div>
+        <h1 style={{fontSize:24,fontWeight:800,marginBottom:6}}>Alfie Tracker</h1>
+        <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:24}}>
+          {["en","ro"].map(l=>(
+            <button key={l} onClick={()=>setLang(l)} style={{
+              padding:"5px 14px",borderRadius:20,border:`2px solid ${lang===l?"#e67e22":"#ddd"}`,
+              background:lang===l?"#fff8f0":"#fff",fontWeight:700,fontSize:13,
+              color:lang===l?"#e67e22":"#aaa"}}>
+              {l==="en"?"🇬🇧 EN":"🇷🇴 RO"}
+            </button>
+          ))}
+        </div>
+        <p style={{color:"#888",fontSize:15,marginBottom:18,fontWeight:600}}>{T.whoAreYou}</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {FAMILY.map(name=>(
+            <button key={name} onClick={()=>setPerson(name)} style={{
+              padding:"16px 10px",borderRadius:14,border:"2px solid #eee",
+              background:"#fff",fontWeight:700,fontSize:16,color:"#333",
+              boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+              {name}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f8f7f4"}}>
+
+      {/* Header */}
+      <div style={{background:"#fff",borderBottom:"1px solid #eee",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:28}}>🐾</span>
+          <div>
+            <div style={{fontWeight:800,fontSize:18}}>Alfie</div>
+            <div style={{fontSize:11,color:"#bbb"}}>{T.appSub}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{display:"flex",gap:4}}>
+            {["en","ro"].map(l=>(
+              <button key={l} onClick={()=>setLang(l)} style={{
+                padding:"3px 10px",borderRadius:20,border:`2px solid ${lang===l?"#e67e22":"#ddd"}`,
+                background:lang===l?"#fff8f0":"#fff",fontWeight:700,fontSize:11,
+                color:lang===l?"#e67e22":"#aaa"}}>
+                {l==="en"?"🇬🇧":"🇷🇴"}
+              </button>
+            ))}
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontWeight:600,fontSize:14}}>👤 {person}</div>
+            <button onClick={()=>setPerson("")} style={{fontSize:11,color:"#aaa",background:"none",border:"none"}}>{T.switchUser}</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",background:"#fff",borderBottom:"1px solid #eee"}}>
+        {[["log",T.tabs[0]],["today",T.tabs[1]],["favourite",T.tabs[2]]].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{flex:1,padding:"11px 0",fontSize:13,fontWeight:600,
+            border:"none",background:"none",color:tab===k?"#e67e22":"#aaa",
+            borderBottom:tab===k?"2px solid #e67e22":"2px solid transparent"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div style={{maxWidth:480,margin:"0 auto",padding:16}}>
+
+        {loading && <p style={{color:"#aaa",textAlign:"center",padding:40}}>Loading…</p>}
+
+        {/* ── LOG ── */}
+        {!loading && tab==="log" && (
+          <div>
+            <p style={{color:"#888",fontSize:13,marginBottom:4}}>{T.logAs} <strong>{person}</strong></p>
+            <p style={{color:"#bbb",fontSize:12,marginBottom:14}}>{T.selectAll}</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+              {TYPE_KEYS.map(k=>{
+                const v=T.types[k],active=selected.has(k);
+                return (
+                  <button key={k} onClick={()=>toggleType(k)} style={{
+                    display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"14px 8px",borderRadius:12,
+                    border:`2px solid ${active?"#e67e22":"#e5e5e5"}`,
+                    background:active?"#fff8f0":"#fff",
+                    fontWeight:600,fontSize:13,color:active?"#c0392b":"#555",
+                    position:"relative"}}>
+                    <span style={{fontSize:28}}>{v.emoji}</span>
+                    <span style={{textAlign:"center",lineHeight:1.3}}>{v.label}</span>
+                    {active && <span style={{position:"absolute",top:6,right:8,fontSize:13,color:"#e67e22"}}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <textarea style={{width:"100%",border:"1px solid #ddd",borderRadius:10,padding:"10px 14px",fontSize:14,outline:"none",resize:"none",marginBottom:10}}
+              rows={2} placeholder={T.notesPlaceholder} value={notes} onChange={e=>setNotes(e.target.value)}/>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,fontSize:13,color:"#888"}}>
+              <input type="checkbox" id="ct" checked={useCustom} onChange={e=>setUseCust(e.target.checked)}/>
+              <label htmlFor="ct">{T.logPastTime}</label>
+              {useCustom && <input type="datetime-local"
+                style={{border:"1px solid #ddd",borderRadius:8,padding:"6px 10px",fontSize:13,marginLeft:8}}
+                value={custTime} onChange={e=>setCustTime(e.target.value)}/>}
+            </div>
+            <button onClick={handleLog} disabled={selected.size===0} style={{
+              width:"100%",padding:"15px 0",fontSize:17,fontWeight:700,
+              background:selected.size>0?"#e67e22":"#ddd",
+              color:selected.size>0?"#fff":"#aaa",
+              border:"none",borderRadius:13,
+              boxShadow:selected.size>0?"0 2px 8px rgba(230,126,34,0.3)":"none",
+              transition:"all 0.2s"}}>
+              {selected.size>0
+                ? `${[...selected].map(k=>T.types[k].emoji).join(" ")} ${T.logBtn}`
+                : T.logBtn}
+            </button>
+            {logs[0] && (
+              <div style={{background:"#fff",borderRadius:13,border:"1px solid #eee",padding:14,marginTop:14}}>
+                <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>{T.lastEntry}</div>
+                <div style={{fontSize:13,color:"#555"}}>{T.types[logs[0].type]?.emoji} {T.types[logs[0].type]?.label} · {logs[0].person} · {timeAgo(logs[0].ts,lang)}</div>
+                {logs[0].notes && <div style={{fontSize:12,color:"#aaa",marginTop:4}}>"{logs[0].notes}"</div>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── TODAY ── */}
+        {!loading && tab==="today" && (
+          <div>
+            <div style={{fontWeight:800,fontSize:18,marginBottom:12}}>{T.todayTitle}</div>
+            <div style={{display:"flex",gap:10,marginBottom:16}}>
+              {TYPE_KEYS.map(k=>(
+                <div key={k} style={{background:"#fff",borderRadius:13,border:"1px solid #eee",padding:"12px 8px",textAlign:"center",flex:1}}>
+                  <div style={{fontSize:26}}>{T.types[k].emoji}</div>
+                  <div style={{fontSize:24,fontWeight:800}}>{todayLogs.filter(l=>l.type===k).length}</div>
+                  <div style={{fontSize:10,color:"#aaa",marginTop:2}}>{T.types[k].label}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#fff",borderRadius:13,border:"1px solid #eee",padding:14}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>{T.timeline}</div>
+              {todayLogs.length===0 && <p style={{color:"#aaa",fontSize:13}}>{T.nothingToday}</p>}
+              {todayLogs.map(e=>(
+                <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#555",marginBottom:6}}>
+                  <span>{T.types[e.type]?.emoji}</span>
+                  <span style={{fontWeight:600}}>{fmtTime(e.ts)}</span>
+                  <span style={{color:"#ccc"}}>–</span>
+                  <span>{T.types[e.type]?.label}</span>
+                  <span style={{color:"#aaa"}}>by {e.person}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── FAVOURITE ── */}
+        {!loading && tab==="favourite" && (
+          <div>
+            {scores.length===0 && <p style={{color:"#aaa",textAlign:"center",padding:40}}>{T.noWalks}</p>}
+            {scores.length>0 && <>
+              <div style={{background:"linear-gradient(135deg,#fff8f0,#fde8cc)",border:"1px solid #f0c080",borderRadius:16,padding:20,textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:48,marginBottom:6}}>🏆</div>
+                <div style={{fontSize:12,fontWeight:700,color:"#aaa",marginBottom:4,textTransform:"uppercase",letterSpacing:1}}>{T.favPerson}</div>
+                <div style={{fontSize:30,fontWeight:900,color:"#e67e22",marginBottom:10}}>{scores[0][0]}</div>
+                <div style={{fontSize:14,color:"#888",fontStyle:"italic",lineHeight:1.6}}>"{quote}"</div>
+              </div>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:8}}>
+                🦮 {T.leaderboard} <span style={{fontWeight:400,fontSize:12,color:"#bbb"}}>{T.leaderSub}</span>
+              </div>
+              {scores.map(([name,score],i)=>(
+                <div key={name} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,marginBottom:8,
+                  background:i===0?"#fff8f0":"#fff",border:`1px solid ${i===0?"#f0c080":"#eee"}`}}>
+                  <div style={{fontSize:22,width:28,textAlign:"center"}}>{i===0?"👑":i===1?"🥈":i===2?"🥉":`${i+1}.`}</div>
+                  <div style={{flex:1,fontWeight:600,fontSize:15}}>{name}</div>
+                  <div style={{fontSize:13,color:"#aaa"}}>{score.toFixed(1)} pts</div>
+                  <div style={{fontSize:18}}>{"🐾".repeat(i===0?3:i===1?2:1)}</div>
+                </div>
+              ))}
+              <p style={{fontSize:11,color:"#bbb",textAlign:"center",marginTop:8}}>{T.weightNote}</p>
+            </>}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
