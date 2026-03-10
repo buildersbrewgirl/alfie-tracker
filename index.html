@@ -342,6 +342,8 @@ function App(){
                   <span style={{color:"#ccc"}}>–</span>
                   <span>{T.types[e.type]?.label}</span>
                   <span style={{color:"#aaa"}}>by {e.person}</span>
+                  <button onClick={async()=>{ await sb.from("logs").delete().eq("id",e.id); loadLogs(); }}
+                    style={{marginLeft:"auto",background:"none",border:"none",color:"#ccc",fontSize:18,lineHeight:1,padding:"0 2px"}}>×</button>
                 </div>
               ))}
             </div>
